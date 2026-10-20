@@ -1,0 +1,41 @@
+{
+  "MasterPasswordHash": "angryweb",
+  "GitHubRulesUrl": "https://raw.githubusercontent.com/Mark-stack-aft/Angry-Web/main/rules.json",
+  "ProxyPort": 8899,
+  "BlockPagePort": 8898,
+  "SyncIntervalMinutes": 10,
+  "Rules": [
+    {
+      "Pattern": "youtube.com/shorts/*",
+      "Description": "유튜브 쇼츠 차단",
+      "Enabled": true
+    },
+    {
+      "Pattern": "*.tiktok.com/*",
+      "Description": "틱톡 전체 및 서브도메인 차단",
+      "Enabled": true
+    },
+    {
+      "Pattern": "instagram.com/reels/*",
+      "Description": "인스타그램 릴스 차단",
+      "Enabled": true
+    },
+    {
+      "Pattern": "*chzzk.naver.com*",
+      "Description": "치지직 라이브 방송 차단",
+      "Enabled": true
+    },
+    {
+      "Pattern": "youtube.com/ (++ watch ++ v=game) | gaming",
+      "Description": "유튜브 게임 관련 복합 조건 차단",
+      "Enabled": false
+    }
+  ],
+  "BlockPage": {
+    "Title": "접속이 차단되었습니다 (Angry Web)",
+    "Heading": "집중할 시간입니다!",
+    "SubHeading": "지정된 블랙리스트 정책에 따라 접속이 차단되었습니다.",
+    "Message": "현재 사이트는 몰입 및 생산성을 위해 차단된 사이트입니다. 지금 하는 일에 집중하세요!",
+    "Quote": "오늘 걷지 않으면 내일은 뛰어야 한다."
+  }
+}
