@@ -13,6 +13,7 @@ builder.Services.AddWindowsService(options =>
 builder.Services.AddSingleton<ConfigManager>();
 builder.Services.AddSingleton<PatternMatcher>();
 builder.Services.AddSingleton<TemporaryAccessManager>();
+builder.Services.AddSingleton<AutoUpdateManager>();
 builder.Services.AddSingleton<BlockPageServer>();
 builder.Services.AddSingleton<ProxyFilterEngine>();
 

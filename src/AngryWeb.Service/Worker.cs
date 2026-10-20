@@ -9,19 +9,22 @@ public class Worker : BackgroundService
     private readonly PatternMatcher _patternMatcher;
     private readonly BlockPageServer _blockPageServer;
     private readonly ProxyFilterEngine _proxyFilterEngine;
+    private readonly AutoUpdateManager _autoUpdateManager;
 
     public Worker(
         ILogger<Worker> logger,
         ConfigManager configManager,
         PatternMatcher patternMatcher,
         BlockPageServer blockPageServer,
-        ProxyFilterEngine proxyFilterEngine)
+        ProxyFilterEngine proxyFilterEngine,
+        AutoUpdateManager autoUpdateManager)
     {
         _logger = logger;
         _configManager = configManager;
         _patternMatcher = patternMatcher;
         _blockPageServer = blockPageServer;
         _proxyFilterEngine = proxyFilterEngine;
+        _autoUpdateManager = autoUpdateManager;
 
         _configManager.ConfigUpdated += OnConfigUpdated;
     }
@@ -42,11 +45,25 @@ public class Worker : BackgroundService
         // 2. Start Block Page server
         _blockPageServer.Start(_configManager.CurrentConfig.BlockPagePort);
 
-        // 3. Start Proxy Filter Engine
+        // 3. Start Proxy Filter Engine (로컬 필터링 즉각 개시)
         _proxyFilterEngine.Start();
 
-        // 4. Initial GitHub Sync
-        await _configManager.SyncWithGitHubAsync(stoppingToken);
+        // 4. PC 부팅 후 인터넷 연결이 완료될 때까지 비동기 대기
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _autoUpdateManager.WaitForInternetConnectionAsync(stoppingToken);
+
+                // 인터넷 연결 확인 즉시 GitHub 자가 업데이트 확인 및 규칙 동기화
+                await _autoUpdateManager.CheckAndApplyUpdateAsync(stoppingToken);
+                await _configManager.SyncWithGitHubAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("인터넷 대기 및 초기 동기화 중 오류: {Msg}", ex.Message);
+            }
+        }, stoppingToken);
 
         // 5. Periodic GitHub Sync loop
         while (!stoppingToken.IsCancellationRequested)
