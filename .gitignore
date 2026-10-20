@@ -34,3 +34,6 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+
+# admin-file
+README-admin.md
