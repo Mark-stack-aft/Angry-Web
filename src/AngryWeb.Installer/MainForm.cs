@@ -192,31 +192,21 @@ public partial class MainForm : Form
                 var targetExe = Path.Combine(_installDir, "AngryWeb.Service.exe");
                 ExtractResource("AngryWeb.Installer.Resources.AngryWeb.Service.exe", targetExe);
 
-                // 4. config.json 설정 저장
+                // 4. config.json 설정 저장 (임베디드된 최신 rules.json 기반)
                 var configPath = Path.Combine(_dataDir, "config.json");
-                var configContent = $$"""
-{
-  "MasterPasswordHash": "{{pw}}",
-  "GitHubRulesUrl": "https://raw.githubusercontent.com/Mark-stack-aft/Angry-Web/main/rules.json",
-  "ProxyPort": 8899,
-  "BlockPagePort": 8898,
-  "SyncIntervalMinutes": 10,
-  "Rules": [
-    { "Pattern": "youtube.com/shorts/*", "Description": "유튜브 쇼츠 차단", "Enabled": true },
-    { "Pattern": "*.tiktok.com/*", "Description": "틱톡 전체 차단", "Enabled": true },
-    { "Pattern": "instagram.com/reels/*", "Description": "인스타그램 릴스 차단", "Enabled": true },
-    { "Pattern": "*chzzk.naver.com*", "Description": "치지직 방송 차단", "Enabled": true }
-  ],
-  "BlockPage": {
-    "Title": "접속이 차단되었습니다 (Angry Web)",
-    "Heading": "집중할 시간입니다!",
-    "SubHeading": "현재 사이트는 블랙리스트 규칙에 의해 차단되었습니다.",
-    "Message": "현재 사이트는 몰입 및 생산성을 위해 차단된 사이트입니다. 지금 하는 일에 집중하세요!",
-    "Quote": "오늘 걷지 않으면 내일은 뛰어야 한다."
-  }
-}
-""";
-                File.WriteAllText(configPath, configContent);
+                try
+                {
+                    ExtractResource("AngryWeb.Installer.Resources.rules.json", configPath);
+                    var rawJson = File.ReadAllText(configPath);
+                    // 비밀번호만 인스톨러에서 지정한 암호로 치환
+                    var updatedJson = System.Text.RegularExpressions.Regex.Replace(rawJson, "\"MasterPasswordHash\":\\s*\"(.*?)\"", $"\"MasterPasswordHash\": \"{pw}\"");
+                    File.WriteAllText(configPath, updatedJson);
+                }
+                catch
+                {
+                    // Fallback
+                    File.WriteAllText(configPath, $$"""{"MasterPasswordHash":"{{pw}}","GitHubRulesUrl":"https://raw.githubusercontent.com/Mark-stack-aft/Angry-Web/main/rules.json","ProxyPort":8899,"BlockPagePort":8898,"SyncIntervalMinutes":10}""");
+                }
 
                 // 5. Windows 서비스 등록
                 Invoke(() => { _progressBar.Value = 70; _lblStatus.Text = "Windows 서비스 등록 중..."; });

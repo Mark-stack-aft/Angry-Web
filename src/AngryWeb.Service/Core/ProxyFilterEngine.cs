@@ -1,4 +1,6 @@
 using System.Net;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 using Titanium.Web.Proxy;
 using Titanium.Web.Proxy.EventArguments;
 using Titanium.Web.Proxy.Models;
@@ -13,6 +15,12 @@ public class ProxyFilterEngine : IDisposable
     private readonly TemporaryAccessManager _accessManager;
     private readonly ProxyServer _proxyServer;
     private ExplicitProxyEndPoint? _explicitEndPoint;
+
+    [DllImport("wininet.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    private static extern bool InternetSetOption(IntPtr hInternet, int dwOption, IntPtr lpBuffer, int dwBufferLength);
+
+    private const int INTERNET_OPTION_SETTINGS_CHANGED = 39;
+    private const int INTERNET_OPTION_REFRESH = 37;
 
     public ProxyFilterEngine(
         ILogger<ProxyFilterEngine> logger,
@@ -53,10 +61,11 @@ public class ProxyFilterEngine : IDisposable
         }
 
         _explicitEndPoint = new ExplicitProxyEndPoint(IPAddress.Any, config.ProxyPort, true);
+        _explicitEndPoint.BeforeTunnelConnectRequest += OnBeforeTunnelConnectRequest;
         _proxyServer.AddEndPoint(_explicitEndPoint);
         _proxyServer.Start();
 
-        // Set as Windows system proxy
+        // 1. Titanium proxy built-in system proxy registration
         try
         {
             _proxyServer.SetAsSystemProxy(_explicitEndPoint, ProxyProtocolType.AllHttp);
@@ -64,14 +73,19 @@ public class ProxyFilterEngine : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Could not set system proxy automatically.");
+            _logger.LogWarning(ex, "Could not set system proxy via Titanium.");
         }
+
+        // 2. Windows registry enforcement (HKCU and all logged-in user profiles via HKU)
+        ApplyWindowsProxyRegistry(true, $"127.0.0.1:{config.ProxyPort}");
     }
 
     public void Stop()
     {
         try
         {
+            ApplyWindowsProxyRegistry(false, null);
+
             if (_explicitEndPoint != null)
             {
                 _proxyServer.DisableSystemProxy(ProxyProtocolType.AllHttp);
@@ -85,6 +99,66 @@ public class ProxyFilterEngine : IDisposable
         }
     }
 
+    private static void NotifyWinInet()
+    {
+        try
+        {
+            InternetSetOption(IntPtr.Zero, INTERNET_OPTION_SETTINGS_CHANGED, IntPtr.Zero, 0);
+            InternetSetOption(IntPtr.Zero, INTERNET_OPTION_REFRESH, IntPtr.Zero, 0);
+        }
+        catch { }
+    }
+
+    private void ApplyWindowsProxyRegistry(bool enable, string? proxyServer)
+    {
+        try
+        {
+            // 1. Current User (if running under user session)
+            using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Internet Settings", true))
+            {
+                if (key != null)
+                {
+                    key.SetValue("ProxyEnable", enable ? 1 : 0, RegistryValueKind.DWord);
+                    if (enable && !string.IsNullOrEmpty(proxyServer))
+                    {
+                        key.SetValue("ProxyServer", proxyServer, RegistryValueKind.String);
+                        key.SetValue("ProxyOverride", "localhost;127.0.0.1;<local>", RegistryValueKind.String);
+                    }
+                }
+            }
+
+            // 2. All active user profiles in HKEY_USERS (Crucial when running as Windows Service / SYSTEM account)
+            var usersKey = Registry.Users;
+            foreach (var subKeyName in usersKey.GetSubKeyNames())
+            {
+                // Skip system/service accounts and classes (.DEFAULT, S-1-5-18, _Classes)
+                if (subKeyName.StartsWith(".DEFAULT") || subKeyName.EndsWith("_Classes") || subKeyName.Equals("S-1-5-18") || subKeyName.Equals("S-1-5-19") || subKeyName.Equals("S-1-5-20"))
+                    continue;
+
+                try
+                {
+                    using var userInternetSettings = usersKey.OpenSubKey($@"{subKeyName}\Software\Microsoft\Windows\CurrentVersion\Internet Settings", true);
+                    if (userInternetSettings != null)
+                    {
+                        userInternetSettings.SetValue("ProxyEnable", enable ? 1 : 0, RegistryValueKind.DWord);
+                        if (enable && !string.IsNullOrEmpty(proxyServer))
+                        {
+                            userInternetSettings.SetValue("ProxyServer", proxyServer, RegistryValueKind.String);
+                            userInternetSettings.SetValue("ProxyOverride", "localhost;127.0.0.1;<local>", RegistryValueKind.String);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            NotifyWinInet();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to apply Windows proxy registry.");
+        }
+    }
+
     private Task OnCertificateValidation(object sender, CertificateValidationEventArgs e)
     {
         // Accept valid upstream certificates
@@ -92,6 +166,37 @@ public class ProxyFilterEngine : IDisposable
         {
             e.IsValid = true;
         }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// HTTPS CONNECT 터널링 단계에서 도메인 레벨 차단을 선제적으로 처리합니다.
+    /// </summary>
+    private Task OnBeforeTunnelConnectRequest(object sender, TunnelConnectSessionEventArgs e)
+    {
+        var hostname = e.HttpClient.Request.RequestUri.Host;
+
+        if (hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            hostname.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_accessManager.IsAllowed(hostname))
+        {
+            return Task.CompletedTask;
+        }
+
+        // Test with simulated HTTPS URL to check domain-wide blocking (e.g. *.crazygames.com/*)
+        var testUrl = $"https://{hostname}/";
+        if (_patternMatcher.IsBlocked(testUrl, out var matchedRule))
+        {
+            _logger.LogInformation("[TUNNEL BLOCKED] {Host} matched rule: {Rule}", hostname, matchedRule);
+
+            // Decrypt SSL to allow graceful redirect to local block page in OnBeforeRequest
+            e.DecryptSsl = true;
+        }
+
         return Task.CompletedTask;
     }
 
@@ -122,18 +227,16 @@ public class ProxyFilterEngine : IDisposable
             var blockPort = _configManager.CurrentConfig.BlockPagePort;
             var redirectUrl = $"http://127.0.0.1:{blockPort}/?target={Uri.EscapeDataString(fullUrl)}&rule={Uri.EscapeDataString(matchedRule ?? "")}";
 
-            // If HTML navigation, redirect with 302
-            if (e.HttpClient.Request.Method == "GET" &&
-                (e.HttpClient.Request.Headers.HeaderExists("Accept") &&
-                 e.HttpClient.Request.Headers.Headers["Accept"].Value.Contains("text/html")))
+            // If HTML navigation or standard browser GET, redirect with 302
+            if (e.HttpClient.Request.Method == "GET")
             {
-                e.Ok($"<html><head><meta http-equiv='refresh' content='0;url={redirectUrl}'></head><body>Redirecting...</body></html>");
+                e.Ok($"<!DOCTYPE html><html><head><meta http-equiv='refresh' content='0;url={redirectUrl}'><script>window.location.replace('{redirectUrl}');</script></head><body>Redirecting to block page...</body></html>");
                 return;
             }
 
             // Or respond with custom 403 HTML directly
             e.GenericResponse(
-                $"<html><head><meta http-equiv='refresh' content='0;url={redirectUrl}'></head><body><h1>Blocked by Angry Web</h1></body></html>",
+                $"<!DOCTYPE html><html><head><meta http-equiv='refresh' content='0;url={redirectUrl}'><script>window.location.replace('{redirectUrl}');</script></head><body><h1>Blocked by Angry Web</h1></body></html>",
                 HttpStatusCode.Forbidden,
                 new Dictionary<string, HttpHeader>
                 {
