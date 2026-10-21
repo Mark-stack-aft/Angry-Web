@@ -5,7 +5,7 @@ param (
     [Parameter(Mandatory=$true)]
     [ValidateSet("install", "start", "stop", "uninstall", "status")]
     [string]$Action,
-    [string]$Password = ""
+    [securestring]$Password = (New-Object System.Security.SecureString)
 )
 
 $ServiceName = "AngryWebService"
@@ -16,7 +16,7 @@ if (-not (Test-Path $BinPath)) {
     $BinPath = Join-Path $PSScriptRoot "src\AngryWeb.Service\bin\Debug\net10.0\AngryWeb.Service.exe"
 }
 
-function Check-Admin {
+function Test-Admin {
     $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Error "이 작업은 반드시 관리자 권한으로 실행해야 합니다. PowerShell을 관리자로 실행해주세요."
@@ -24,8 +24,8 @@ function Check-Admin {
     }
 }
 
-function Verify-Password {
-    param([string]$InputPw)
+function Test-PasswordVerification {
+    param([securestring]$InputPw)
     # Default master password
     $Expected = "angryweb"
     
@@ -40,10 +40,16 @@ function Verify-Password {
         } catch {}
     }
 
-    if ($InputPw -ne $Expected) {
-        $entered = Read-Host "보안을 위해 관리자 마스터 비밀번호를 입력하세요" -AsSecureString
-        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($entered)
+    $PlainPw = ""
+    if ($InputPw -and $InputPw.Length -gt 0) {
+        $BSTR = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($InputPw)
         $PlainPw = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
+    }
+
+    if ($PlainPw -ne $Expected) {
+        $entered = Read-Host "보안을 위해 관리자 마스터 비밀번호를 입력하세요" -AsSecureString
+        $BSTR2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($entered)
+        $PlainPw = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR2)
         if ($PlainPw -ne $Expected) {
             Write-Error "비밀번호가 올바르지 않습니다. 작업이 거부되었습니다."
             exit 1
@@ -51,7 +57,7 @@ function Verify-Password {
     }
 }
 
-Check-Admin
+Test-Admin
 
 switch ($Action) {
     "install" {
@@ -77,14 +83,14 @@ switch ($Action) {
 
     "stop" {
         Write-Warning "임의 종료를 방지하기 위해 마스터 비밀번호를 검증합니다."
-        Verify-Password $Password
+        Test-PasswordVerification -InputPw $Password
         sc.exe stop $ServiceName
         Write-Host "서비스가 정지되었습니다." -ForegroundColor Yellow
     }
 
     "uninstall" {
         Write-Warning "제거를 방지하기 위해 마스터 비밀번호를 검증합니다."
-        Verify-Password $Password
+        Test-PasswordVerification -InputPw $Password
         sc.exe stop $ServiceName
         sc.exe delete $ServiceName
         Write-Host "Angry Web 서비스가 삭제되었습니다." -ForegroundColor Green
