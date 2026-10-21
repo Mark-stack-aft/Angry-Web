@@ -1,6 +1,6 @@
 {
   "MasterPasswordHash": "angryweb",
-  "GitHubRulesUrl": "https://raw.githubusercontent.com/Mark-stack-aft/Angry-Web/main/rules.json",
+  "GitHubRulesUrl": "https://raw.githubusercontent.com/code-ing-m/Angry-Web/main/rules.json",
   "ProxyPort": 8899,
   "BlockPagePort": 8898,
   "SyncIntervalMinutes": 10,

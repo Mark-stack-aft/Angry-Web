@@ -3,7 +3,7 @@ namespace AngryWeb.Service.Core;
 public class FilterConfig
 {
     public string MasterPasswordHash { get; set; } = "angryweb"; // Default or SHA256
-    public string GitHubRulesUrl { get; set; } = "https://raw.githubusercontent.com/Mark-stack-aft/Angry-Web/main/rules.json";
+    public string GitHubRulesUrl { get; set; } = "https://raw.githubusercontent.com/code-ing-m/Angry-Web/main/rules.json";
     public int ProxyPort { get; set; } = 8899;
     public int BlockPagePort { get; set; } = 8898;
     public int SyncIntervalMinutes { get; set; } = 10;

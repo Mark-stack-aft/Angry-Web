@@ -205,7 +205,7 @@ public partial class MainForm : Form
                 catch
                 {
                     // Fallback
-                    File.WriteAllText(configPath, $$"""{"MasterPasswordHash":"{{pw}}","GitHubRulesUrl":"https://raw.githubusercontent.com/Mark-stack-aft/Angry-Web/main/rules.json","ProxyPort":8899,"BlockPagePort":8898,"SyncIntervalMinutes":10}""");
+                    File.WriteAllText(configPath, $$"""{"MasterPasswordHash":"{{pw}}","GitHubRulesUrl":"https://raw.githubusercontent.com/code-ing-m/Angry-Web/main/rules.json","ProxyPort":8899,"BlockPagePort":8898,"SyncIntervalMinutes":10}""");
                 }
 
                 // 5. Windows 서비스 등록

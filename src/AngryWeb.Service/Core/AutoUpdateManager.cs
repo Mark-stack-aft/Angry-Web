@@ -9,7 +9,7 @@ public class AutoUpdateManager
 {
     private readonly ILogger<AutoUpdateManager> _logger;
     private readonly HttpClient _httpClient = new();
-    private const string GitHubApiReleaseUrl = "https://api.github.com/repos/Mark-stack-aft/Angry-Web/releases/latest";
+    private const string GitHubApiReleaseUrl = "https://api.github.com/repos/code-ing-m/Angry-Web/releases/latest";
 
     public AutoUpdateManager(ILogger<AutoUpdateManager> logger)
     {
